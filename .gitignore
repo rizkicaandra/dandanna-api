@@ -1,0 +1,24 @@
+# OpenSpec and Claude
+/openspec
+.claude
+
+# Compiled binaries
+bin/
+
+# Environment variables — never commit secrets
+.env
+
+# Test artifacts
+coverage.out
+coverage.html
+*.test
+
+# macOS
+.DS_Store
+
+# Editor
+.idea/
+.vscode/
+
+# Go vendor (if ever used)
+vendor/
