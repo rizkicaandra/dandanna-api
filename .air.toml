@@ -1,0 +1,34 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  # Command to build the binary
+  cmd = "go build -o ./tmp/main ./cmd/api"
+
+  # Binary to run after build
+  bin = "./tmp/main"
+
+  # Watch these file extensions for changes
+  include_ext = ["go", "env"]
+
+  # Ignore these directories
+  exclude_dir = ["tmp", "bin", "vendor", ".git", ".claude", "openspec"]
+
+  # Kill the running binary and restart on change
+  kill_delay = "200ms"
+
+  # Show build log
+  log = "build-errors.log"
+
+  # Send interrupt before killing the process — triggers graceful shutdown
+  send_interrupt = true
+
+[log]
+  # Show timestamp on air log lines
+  time = true
+
+[color]
+  main    = "magenta"
+  watcher = "cyan"
+  build   = "yellow"
+  runner  = "green"

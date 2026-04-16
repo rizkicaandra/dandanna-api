@@ -84,10 +84,13 @@ docker-run: ## Run Docker container
 	docker run -p 8080:8080 --env-file .env $(APP_NAME):latest
 
 dev: ## Run in development mode with hot reload (requires air)
-	@if command -v air >/dev/null 2>&1; then \
+	@AIR=$(shell go env GOPATH)/bin/air; \
+	if [ -f "$$AIR" ]; then \
+		$$AIR; \
+	elif command -v air >/dev/null 2>&1; then \
 		air; \
 	else \
-		echo "air not installed. Install with: go install github.com/air-verse/air@latest"; \
+		echo "air not installed. Run: make install-tools"; \
 		exit 1; \
 	fi
 

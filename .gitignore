@@ -4,6 +4,7 @@
 
 # Compiled binaries
 bin/
+tmp/
 
 # Environment variables — never commit secrets
 .env
