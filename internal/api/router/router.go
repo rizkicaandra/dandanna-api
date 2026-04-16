@@ -10,6 +10,7 @@ import (
 // HealthHandler is the interface the router depends on — not the concrete type.
 type HealthHandler interface {
 	Handle(http.ResponseWriter, *http.Request)
+	Readyz(http.ResponseWriter, *http.Request)
 }
 
 // Router manages HTTP routing
@@ -31,6 +32,7 @@ func New(log logger.Logger, corsOrigins []string) *Router {
 // Setup registers all routes
 func (r *Router) Setup(health HealthHandler) {
 	r.mux.HandleFunc("GET /api/health", health.Handle)
+	r.mux.HandleFunc("GET /api/readyz", health.Readyz)
 
 	r.mux.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
 		http.NotFound(w, req)

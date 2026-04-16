@@ -36,6 +36,7 @@ type PostgresConfig struct {
 	MaxOpenConns    int
 	MaxIdleConns    int
 	ConnMaxLifetime time.Duration
+	ConnMaxIdleTime time.Duration
 }
 
 // RedisConfig holds Redis configuration
@@ -74,6 +75,7 @@ func Load() (*Config, error) {
 			MaxOpenConns:    getEnvInt("POSTGRES_MAX_OPEN_CONNS", 25),
 			MaxIdleConns:    getEnvInt("POSTGRES_MAX_IDLE_CONNS", 5),
 			ConnMaxLifetime: getEnvDuration("POSTGRES_CONN_MAX_LIFETIME", 5*time.Minute),
+			ConnMaxIdleTime: getEnvDuration("POSTGRES_CONN_MAX_IDLE_TIME", 5*time.Minute),
 		},
 		Redis: RedisConfig{
 			Host:     getEnv("REDIS_HOST", "localhost"),
