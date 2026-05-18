@@ -1,0 +1,149 @@
+Project ZonaRocket{
+    database_type: 'PostgreSQL'
+    Note: '''
+# User Database
+    '''
+}
+
+Table user.application {
+    id bigserial [pk]
+    code char [not null, unique]
+    created_at timestamp [not null, note: 'timestampz']
+    updated_at timestamp [not null, note: 'timestampz']
+    deleted_at timestamp [note: 'timestampz']
+    created_by varchar
+    updated_by varchar
+    deleted_by varchar
+    name varchar [not null, unique]
+    note: "Table contains all application"
+}
+
+Table user.role {
+    id bigserial [pk]
+    code varchar [unique, not null]
+    created_at timestamp [not null, note: 'timestampz']
+    updated_at timestamp [not null, note: 'timestampz']
+    deleted_at timestamp [note: 'timestampz']
+    created_by varchar
+    updated_by varchar
+    deleted_by varchar
+    name varchar [not null]
+    application_id bigint [not null, ref: > user.application.id]
+    note: " # Table Role || save all role per user registered"
+}
+
+Table user.module {
+    id bigserial [pk]
+    code char [not null, unique]
+    created_at timestamp [not null, note: 'timestampz']
+    updated_at timestamp [not null, note: 'timestampz']
+    deleted_at timestamp [note: 'timestampz']
+    created_by varchar
+    updated_by varchar
+    deleted_by varchar
+    name varchar [not null, unique]
+    description varchar
+    note: "# Table Module || contains module on every app"
+}
+
+Table user.submodule {
+    id bigserial [pk]
+    code char [not null]
+    created_at timestamp [not null, note: 'timestampz']
+    updated_at timestamp [not null, note: 'timestampz']
+    deleted_at timestamp [note: 'timestampz']
+    created_by varchar
+    updated_by varchar
+    deleted_by varchar
+    module_id bigint [not null, ref: > user.module.id]
+    name varchar [not null]
+    description varchar
+    note: "# Table Module || contains submodule on every app"
+
+    indexes {
+        (module_id, code) [unique]
+        (module_id, name) [unique]
+    }
+}
+
+Table user.permission {
+    id bigserial [pk]
+    created_at timestamp [not null, note: 'timestampz']
+    updated_at timestamp [not null, note: 'timestampz']
+    deleted_at timestamp [note: 'timestampz']
+    created_by varchar
+    updated_by varchar
+    deleted_by varchar
+    role_id bigint [not null, ref: > user.role.id]
+    module_id bigint [not null, ref: > user.module.id]
+    submodule_id bigint [not null, ref: > user.submodule.id]
+    action jsonb [not null, note: 'Json Type']
+    note: "Table contains all permission"
+
+    indexes {
+        (role_id, module_id, submodule_id) [unique]
+    }
+}
+
+Table user.user_management {
+    id uuid [pk, note: 'gen_random_uuid()']
+    created_at timestamp [not null, note: 'timestampz']
+    updated_at timestamp [not null, note: 'timestampz']
+    deleted_at timestamp [note: 'timestampz']
+    created_by varchar
+    updated_by varchar
+    deleted_by varchar
+    name varchar [not null]
+    phone varchar [not null]
+    email varchar [unique, not null]
+    password text [not null]
+    note: "Table contains all user data"
+}
+
+Enum user.user_role_status {
+    active
+    inactive
+    suspended
+}
+
+Table user.user_role {
+    id bigserial [pk]
+    created_at timestamp [not null, note: 'timestampz']
+    updated_at timestamp [not null, note: 'timestampz']
+    deleted_at timestamp [note: 'timestampz']
+    created_by varchar
+    updated_by varchar
+    deleted_by varchar
+    application_id bigint [not null, ref: > user.application.id]
+    user_management_id uuid [not null, ref: > user.user_management.id]
+    role_id bigint [not null, ref: > user.role.id]
+    status user.user_role_status [not null]
+    note: "# Table User Role || we will develop many apps, so user doesn't need to have many accounts, one user is able to have many roles"
+
+    indexes {
+        (user_management_id, role_id, application_id) [unique]
+    }
+}
+
+Enum user.primary_service {
+    makeup
+    hair
+    attire
+}
+
+Table user.artist_profile {
+    id uuid [pk, note: 'gen_random_uuid()']
+    created_at timestamp [not null, note: 'timestampz']
+    updated_at timestamp [not null, note: 'timestampz']
+    deleted_at timestamp [note: 'timestampz']
+    created_by varchar
+    updated_by varchar
+    deleted_by varchar
+    user_management_id uuid [not null, unique, ref: > user.user_management.id]
+    business_name varchar [not null]
+    primary_service user.primary_service [not null]
+    city varchar [not null]
+    instagram varchar
+    note: "Artist professional profile — one-to-one with user.user_management"
+}
+

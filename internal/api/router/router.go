@@ -13,6 +13,11 @@ type HealthHandler interface {
 	Readyz(http.ResponseWriter, *http.Request)
 }
 
+// ArtistHandler is the interface the router depends on for artist routes.
+type ArtistHandler interface {
+	Register(http.ResponseWriter, *http.Request)
+}
+
 // Router manages HTTP routing
 type Router struct {
 	mux         *http.ServeMux
@@ -30,9 +35,11 @@ func New(log logger.Logger, corsOrigins []string) *Router {
 }
 
 // Setup registers all routes
-func (r *Router) Setup(health HealthHandler) {
+func (r *Router) Setup(health HealthHandler, artist ArtistHandler) {
 	r.mux.HandleFunc("GET /api/health", health.Handle)
 	r.mux.HandleFunc("GET /api/readyz", health.Readyz)
+
+	r.mux.HandleFunc("POST /api/artists/register", artist.Register)
 
 	r.mux.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
 		http.NotFound(w, req)

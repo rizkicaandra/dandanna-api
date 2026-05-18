@@ -1,0 +1,214 @@
+schema: spec-driven
+
+# Project context
+context: |
+  Tech stack: Go 1.25+, standard library (net/http), PostgreSQL 16+, Redis 8+, Docker
+  Architecture: Layered/Clean Architecture with DDD principles
+  Build: Make, Go modules, static binaries
+  Testing: table-driven tests, testify, go-mock
+
+  Project structure (golang-standards/project-layout):
+  - cmd/
+    - api/              - Main API application entry point
+    - worker/           - Background job worker
+    - migrate/          - Database migration runner
+  - internal/
+    - api/              - HTTP layer
+      - handler/        - Request handlers
+      - middleware/     - Logging, auth, recovery, tracing
+      - router/         - Route registration and routing logic
+      - dto/            - Request/response DTOs with validation tags
+    - application/      - Application services layer
+      - service/        - Business use cases
+      - dto/            - Application-level DTOs
+    - domain/           - Domain layer (core business logic)
+      - entity/         - Domain entities
+      - repository/     - Repository interfaces
+      - service/        - Domain services
+      - valueobject/    - Value objects
+      - error/          - Domain-specific errors
+    - infrastructure/   - External dependencies
+      - postgres/       - DB implementation, repositories
+      - redis/          - Cache implementation
+      - config/         - Configuration loader
+      - logger/         - Structured logger (zap/zerolog)
+      - metrics/        - Prometheus metrics
+  - pkg/                - Public reusable packages
+  - migrations/          - SQL migrations (up/down)
+  - scripts/             - Build, deploy, local dev scripts
+  - docs/                - Architecture docs, API specs
+  - .github/             - CI/CD workflows
+  - go.mod, go.sum, Makefile, Dockerfile
+
+  Core architectural principles:
+  - Dependency Inversion: Depend on interfaces, not concrete implementations
+  - Repository Pattern: Abstract data access behind interfaces
+  - Unit of Work: Manage transaction boundaries at application layer
+  - DTO Pattern: Separate internal models from API contracts
+  - Context propagation: All I/O operations accept and propagate context
+  - Graceful shutdown: Handle SIGTERM/SIGINT, close connections properly
+
+  Go best practices (senior level):
+  - Use generics for type-safe collections and utilities (Go 1.25+)
+  - Error handling: errors.Is, errors.As for error inspection
+  - Context management: Create per-request context, set appropriate timeouts
+  - Goroutine leaks: Always manage goroutine lifecycles, use sync.WaitGroup or errgroup
+  - Defer cleanup: Use defer for resource cleanup (rows.Close(), mutex.Unlock())
+  - Struct composition over inheritance
+  - Receive interfaces, return structs
+  - Avoid panics in production - return errors instead
+  - Use go.uber.org/multierr for aggregating errors
+  - Channel patterns: Buffered channels for producers, select for multiple operations
+
+  Database patterns:
+  - sqlx for enhanced DB operations (Named queries, Struct scan)
+  - Transactions: Always use BeginTxctx with context
+  - Connection pooling: Configure SetMaxOpenConns, SetMaxIdleConns
+  - N+1 prevention: Use JOINs or DataLoader pattern
+  - Index usage: Review EXPLAIN ANALYZE for complex queries
+  - Row-level locking: SELECT FOR UPDATE for critical sections
+  - Deadlock handling: Retry logic with exponential backoff
+
+  API design standards:
+  - RESTful conventions with proper HTTP verbs
+  - URI versioning: /api/v1/resource
+  - Content negotiation: application/json, handle Accept header
+  - HTTP status codes: 200 (OK), 201 (Created), 204 (No Content)
+  - Pagination: ?page=1&limit=20 with Link header
+  - Rate limiting: Redis-backed token bucket
+  - Request validation: Validate on handler entry, fail fast
+  - Idempotency keys for POST/PUT operations
+
+  Response envelope (ALL endpoints must use this format):
+  - Success: { "success": true, "meta": { "requestId": "...", "timestamp": "..." }, "data": {...}, "errors": [] }
+  - Error:   { "success": false, "meta": { "requestId": "...", "timestamp": "..." }, "data": null, "errors": [...] }
+  - "success" reflects HTTP status < 400
+  - "meta.requestId" is always the X-Request-ID value from request context
+  - "meta.timestamp" is RFC3339Nano UTC at response write time
+  - "data" is null on errors, never omitted
+  - "errors" is [] on success, never omitted
+  - "errors[].field" is omitted for non-field errors (e.g. auth, rate-limit)
+  - "errors[].meta" is always a JSON object {}, never null — use it for extra context (e.g. required vs current balance)
+  - Error codes are SCREAMING_SNAKE_CASE (e.g. DATE_IN_THE_PAST, INSUFFICIENT_BALANCE)
+  - Always use response.JSON() and response.Error() from internal/api/response — never write raw JSON in handlers
+  - Error example with field context:
+      { "field": "balance", "code": "INSUFFICIENT_BALANCE",
+        "meta": { "required": 350000, "current": 100000, "currency": "IDR" },
+        "message": "Balance is not enough to complete this booking." }
+
+  Error handling strategy:
+  - Domain errors: Custom types implementing error interface
+  - Error wrapping: fmt.Errorf with %w for errors.Is/As
+  - HTTP error mapping: Application errors → HTTP status codes
+  - Never expose internal errors in API responses
+  - Log full error stack trace, return safe message to client
+  - Error categories: validation, not found, conflict, internal, unauthorized
+
+  Concurrency patterns:
+  - errgroup.Group for coordinated goroutine shutdown
+  - worker pools with bounded concurrency
+  - Context cancellation for propagating shutdown signals
+  - sync.Pool for object reuse (buffers, encoders)
+  - atomic operations for simple counters
+  - RWMutex for read-heavy data structures
+
+  Testing approach:
+  - Table-driven tests for multiple scenarios
+  - Subtests for test organization (t.Run)
+  - Test doubles: Use interfaces for mocking, avoid mocking frameworks initially
+  - Integration tests with testcontainers for real DB/Redis
+  - Golden file tests for complex output validation
+  - Race detection: go test -race in CI
+  - Coverage: Minimum 80% for domain layer, 60% overall
+  - Fuzzing for input parsing functions
+
+  Observability:
+  - Structured logging: JSON format with trace/correlation IDs
+  - Log levels: Debug, Info, Warn, Error (no Fatal in production)
+  - Request tracing: middleware generates request ID
+  - Metrics: Prometheus with Histogram for latency, Counter for operations
+  - Health checks: /healthz (liveness), /readyz (readiness with DB/Redis ping)
+  - Profiling: net/http/pprof enabled in dev/staging
+
+  Security practices:
+  - SQL injection: Always use parameterized queries
+  - Input validation: Validate untrusted input, sanitize output
+  - Secrets: Environment variables or Vault, never in code
+  - TLS 1.3 only in production
+  - Rate limiting and request size limits
+  - CORS: Whitelist origins, no * in production
+  - Security headers: X-Content-Type-Options, X-Frame-Options, CSP
+  - Dependency scanning: Use govulncheck in CI
+
+  Performance optimization:
+  - pprof for CPU and memory profiling
+  - Trace execution with net/http/trace
+  - Avoid premature optimization, measure first
+  - Use sync.Pool for allocations in hot paths
+  - Connection reuse: HTTP client pools, DB connection pools
+  - Cache-aside pattern for frequently accessed data
+  - Batch operations: INSERT batches, bulk queries
+
+  Configuration management:
+  - Struct-based config with env var tags
+  - 12-factor app: environment-specific config
+  - Config validation on startup (fail fast)
+  - Separate configs for dev, staging, production
+  - No sensitive data in config files
+
+  Code review guidelines:
+  - Review logic changes line-by-line
+  - Verify error handling is complete
+  - Check for goroutine leaks
+  - Ensure tests cover new/changed paths
+  - Validate SQL queries for performance
+  - Confirm godoc comments on exported items
+  - Check for proper context usage
+
+# Per-artifact rules
+rules:
+  proposal:
+    - Start with clear problem statement and business value
+    - Include "Why now?" - timing and urgency justification
+    - Architecture diagram showing component interactions
+    - Database schema changes with migration strategy
+    - API contract changes (request/response examples)
+    - Error scenarios and edge cases
+    - Security and performance considerations
+    - Testing strategy (unit, integration, e2e)
+    - Rollback plan if things go wrong
+    - Estimated complexity and risk level (low/medium/high)
+    - Dependencies on other teams/systems
+    - Non-goals: Explicitly list what's NOT in scope
+    - Keep proposals under 800 words, use bullet points
+
+  tasks:
+    - Break into 2-4 hour tasks (max 1 day per task)
+    - Order tasks to enable incremental value delivery
+    - Database layer first: schema, migrations, repositories
+    - Domain layer: entities, value objects, business rules
+    - Application layer: services, use cases, orchestration
+    - API layer: handlers, routing, middleware
+    - Each task includes tests (test-first or test-same-time)
+    - Include documentation tasks for public APIs
+    - Add performance benchmarks for hot paths
+    - Separate refactoring tasks from feature tasks
+    - Mark tasks that can be done in parallel
+    - Include deployment/checklist tasks
+
+  design:
+    - Start with domain model: entities, value objects, invariants
+    - Define repository interfaces in domain layer
+    - Use dependency injection: pass interfaces as constructor parameters
+    - Application services orchestrate, don't contain business logic
+    - Transaction boundaries at application service level
+    - DTOs map between layers and hide internals
+    - Validation chain: handler validates HTTP input → domain validates business rules
+    - Caching strategy: cache invalidation, TTL, warm-up
+    - Idempotency for safe retries
+    - Rate limiting: per-user or per-API key
+    - Pagination: cursor-based for large datasets, offset-based for simple lists
+    - Search: consider PostgreSQL full-text or external search service
+    - Background jobs: define job structure, retry policy, dead letter queue
+    - Request/response examples with all fields and error cases
+    - OpenAPI spec for all endpoints

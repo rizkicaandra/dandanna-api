@@ -11,11 +11,10 @@ import (
 	"syscall"
 
 	"github.com/joho/godotenv"
-	"github.com/rizkicandra/dandanna-api/internal/api/handler"
-	"github.com/rizkicandra/dandanna-api/internal/api/router"
+	"github.com/rizkicandra/dandanna-api/internal/bootstrap"
 	"github.com/rizkicandra/dandanna-api/internal/infrastructure/config"
 	"github.com/rizkicandra/dandanna-api/internal/infrastructure/logger"
-	"github.com/rizkicandra/dandanna-api/internal/infrastructure/postgres"
+	pginfra "github.com/rizkicandra/dandanna-api/internal/infrastructure/postgres"
 	"github.com/rizkicandra/dandanna-api/internal/infrastructure/redis"
 )
 
@@ -27,6 +26,8 @@ var (
 )
 
 func main() {
+	// ── 1. CLI flags ─────────────────────────────────────────────────────────
+	// Supports: ./dandanna-api --version
 	showVersion := flag.Bool("version", false, "Show version information")
 	flag.Parse()
 
@@ -35,9 +36,9 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Load .env file if present — local development only.
-	// In staging/production this file won't exist; real env vars are injected
-	// by the platform (Docker, Kubernetes, etc.) and godotenv silently skips.
+	// ── 2. Configuration ──────────────────────────────────────────────────────
+	// Loads .env for local development; ignored in production where the platform
+	// (Docker / Kubernetes) injects real environment variables directly.
 	_ = godotenv.Load()
 
 	cfg, err := config.Load()
@@ -46,6 +47,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	// ── 3. Logger ─────────────────────────────────────────────────────────────
+	// Structured JSON logger backed by zerolog. Log level comes from APP_LOG_LEVEL.
 	log := logger.New(logger.LogLevel(cfg.App.LogLevel), nil)
 	log.Info("starting dandanna-api",
 		logger.String("version", Version),
@@ -54,8 +57,10 @@ func main() {
 		logger.Int("port", cfg.Server.Port),
 	)
 
-	// Connect to PostgreSQL — fail fast if unreachable
-	db, err := postgres.New(context.Background(), postgres.Config{
+	// ── 4. PostgreSQL ─────────────────────────────────────────────────────────
+	// Primary data store. Fails fast on startup if unreachable — no point
+	// serving traffic without a database.
+	db, err := pginfra.New(context.Background(), pginfra.Config{
 		Host:            cfg.Postgres.Host,
 		Port:            cfg.Postgres.Port,
 		User:            cfg.Postgres.User,
@@ -78,7 +83,8 @@ func main() {
 		logger.String("database", cfg.Postgres.Database),
 	)
 
-	// Connect to Redis — fail fast if unreachable
+	// ── 5. Redis ──────────────────────────────────────────────────────────────
+	// Used for caching and session storage. Also fails fast on startup.
 	rdb, err := redis.New(context.Background(), redis.Config{
 		Host:     cfg.Redis.Host,
 		Port:     cfg.Redis.Port,
@@ -95,11 +101,16 @@ func main() {
 		logger.Int("port", cfg.Redis.Port),
 	)
 
-	health := handler.NewHealth(log, Version, db, rdb)
+	// ── 6. Bootstrap ──────────────────────────────────────────────────────────
+	// Wires all features (handlers, services, repositories) and registers routes.
+	// Each feature lives in its own bootstrap file under internal/bootstrap/.
+	r, err := bootstrap.NewRouter(context.Background(), db, rdb, log, Version, cfg.App.CORSOrigins)
+	if err != nil {
+		log.Error("failed to bootstrap application", logger.Err(err))
+		os.Exit(1)
+	}
 
-	r := router.New(log, cfg.App.CORSOrigins)
-	r.Setup(health)
-
+	// ── 7. HTTP server ────────────────────────────────────────────────────────
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Server.Port),
 		Handler:      r.Handler(),
@@ -108,6 +119,8 @@ func main() {
 		IdleTimeout:  cfg.Server.IdleTimeout,
 	}
 
+	// Start the server in a goroutine so the main goroutine can listen for
+	// shutdown signals below.
 	serverErr := make(chan error, 1)
 	go func() {
 		log.Info("server listening", logger.String("addr", server.Addr))
@@ -116,6 +129,9 @@ func main() {
 		}
 	}()
 
+	// ── 8. Graceful shutdown ──────────────────────────────────────────────────
+	// Block until either the server crashes or we receive SIGINT / SIGTERM
+	// (e.g. Ctrl+C or a Kubernetes pod termination signal).
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
@@ -127,6 +143,8 @@ func main() {
 		log.Info("shutdown signal received", logger.String("signal", sig.String()))
 	}
 
+	// Give in-flight requests up to ShutdownTimeout to finish before the
+	// process exits. New requests are rejected immediately.
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
 	defer cancel()
 
