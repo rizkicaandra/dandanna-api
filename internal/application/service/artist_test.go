@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	domainerror "github.com/rizkicandra/dandanna-api/internal/domain/error"
+	"github.com/rizkicandra/dandanna-api/internal/application/service"
 	"github.com/rizkicandra/dandanna-api/internal/domain/entity"
 	"github.com/rizkicandra/dandanna-api/internal/domain/repository"
-	"github.com/rizkicandra/dandanna-api/internal/application/service"
+	"github.com/rizkicandra/dandanna-api/internal/infrastructure/crypto"
 	"github.com/rizkicandra/dandanna-api/internal/infrastructure/logger"
 )
 
@@ -16,6 +18,7 @@ import (
 type mockArtistRepo struct {
 	existsByEmail func(ctx context.Context, email string) (bool, error)
 	create        func(ctx context.Context, params repository.CreateArtistParams) (*entity.Artist, error)
+	getByEmail    func(ctx context.Context, email string) (*entity.Artist, error)
 }
 
 func (m *mockArtistRepo) ExistsByEmail(ctx context.Context, email string) (bool, error) {
@@ -26,9 +29,53 @@ func (m *mockArtistRepo) Create(ctx context.Context, params repository.CreateArt
 	return m.create(ctx, params)
 }
 
+func (m *mockArtistRepo) GetByEmail(ctx context.Context, email string) (*entity.Artist, error) {
+	if m.getByEmail != nil {
+		return m.getByEmail(ctx, email)
+	}
+	return nil, errors.New("GetByEmail not implemented in mock")
+}
+
+// mockTokenRepo is a no-op stub for TokenRepository used by Register tests.
+type mockTokenRepo struct{}
+
+func (m *mockTokenRepo) StoreAccess(_ context.Context, _, _ string, _ *entity.Session, _ time.Duration) error {
+	return nil
+}
+func (m *mockTokenRepo) GetAccess(_ context.Context, _, _ string) (*entity.Session, error) {
+	return nil, nil
+}
+func (m *mockTokenRepo) DeleteAccess(_ context.Context, _, _ string) error { return nil }
+func (m *mockTokenRepo) StoreRefresh(_ context.Context, _, _, _ string, _ time.Duration) error {
+	return nil
+}
+func (m *mockTokenRepo) GetRefresh(_ context.Context, _, _ string) (string, error) { return "", nil }
+func (m *mockTokenRepo) DeleteRefresh(_ context.Context, _, _ string) error         { return nil }
+func (m *mockTokenRepo) GetSession(_ context.Context, _, _ string) (*entity.SessionPointer, error) {
+	return nil, nil
+}
+func (m *mockTokenRepo) SetSession(_ context.Context, _, _ string, _ *entity.SessionPointer, _ time.Duration) error {
+	return nil
+}
+func (m *mockTokenRepo) DeleteSession(_ context.Context, _, _ string) error        { return nil }
+func (m *mockTokenRepo) GetLoginAttempts(_ context.Context, _, _ string) (int64, error) {
+	return 0, nil
+}
+func (m *mockTokenRepo) IncrLoginAttempts(_ context.Context, _, _ string, _ time.Duration) (int64, error) {
+	return 1, nil
+}
+func (m *mockTokenRepo) ResetLoginAttempts(_ context.Context, _, _ string) error { return nil }
+
 func newTestService(repo repository.ArtistRepository) *service.ArtistService {
 	log := logger.New(logger.LevelError, nil)
-	return service.NewArtistService(repo, log, 1, 1)
+	return service.NewArtistService(repo, &mockTokenRepo{}, log, 1, 1, service.ArtistServiceConfig{
+		AppCode:  "TEST_APP",
+		RoleCode: "TEST_ROLE",
+		AccessTokenTTL:     15 * time.Minute,
+		RefreshTokenTTL:    168 * time.Hour,
+		LoginAttemptWindow: 15 * time.Minute,
+		LoginAttemptLimit:  10,
+	})
 }
 
 var validInput = service.RegisterInput{
@@ -183,5 +230,126 @@ func TestArtistService_Register_RepoError(t *testing.T) {
 	_, err := svc.Register(context.Background(), validInput)
 	if err == nil {
 		t.Fatal("expected an error from repo, got nil")
+	}
+}
+
+// ── Login tests ────────────────────────────────────────────────────────────────
+
+func newLoginRepo(artist *entity.Artist, getErr error) *mockArtistRepo {
+	r := happyRepo()
+	r.getByEmail = func(_ context.Context, _ string) (*entity.Artist, error) {
+		return artist, getErr
+	}
+	return r
+}
+
+func makeHashedArtist() *entity.Artist {
+	hash, _ := crypto.HashArgon2id("secret123")
+	return &entity.Artist{
+		ID:             "uuid-1",
+		Name:           "Sari Indah",
+		Email:          "sari@example.com",
+		HashedPassword: hash,
+		RoleStatus:     "active",
+	}
+}
+
+func TestArtistService_Login_HappyPath(t *testing.T) {
+	svc := newTestService(newLoginRepo(makeHashedArtist(), nil))
+	out, err := svc.Login(context.Background(), "127.0.0.1", service.LoginInput{
+		Email: "sari@example.com", Password: "secret123",
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if out.AccessToken == "" || out.RefreshToken == "" {
+		t.Error("expected non-empty tokens")
+	}
+}
+
+func TestArtistService_Login_WrongPassword(t *testing.T) {
+	svc := newTestService(newLoginRepo(makeHashedArtist(), nil))
+	_, err := svc.Login(context.Background(), "127.0.0.1", service.LoginInput{
+		Email: "sari@example.com", Password: "wrongpassword",
+	})
+	var u *domainerror.Unauthorized
+	if !errors.As(err, &u) {
+		t.Fatalf("expected *Unauthorized, got %T: %v", err, err)
+	}
+}
+
+func TestArtistService_Login_EmailNotFound(t *testing.T) {
+	repo := newLoginRepo(nil, &domainerror.NotFound{Resource: "artist", ID: "x@x.com"})
+	svc := newTestService(repo)
+	_, err := svc.Login(context.Background(), "127.0.0.1", service.LoginInput{
+		Email: "x@x.com", Password: "secret123",
+	})
+	var u *domainerror.Unauthorized
+	if !errors.As(err, &u) {
+		t.Fatalf("expected *Unauthorized, got %T: %v", err, err)
+	}
+}
+
+func TestArtistService_Login_SuspendedAccount(t *testing.T) {
+	a := makeHashedArtist()
+	a.RoleStatus = "suspended"
+	svc := newTestService(newLoginRepo(a, nil))
+	_, err := svc.Login(context.Background(), "127.0.0.1", service.LoginInput{
+		Email: "sari@example.com", Password: "secret123",
+	})
+	var f *domainerror.Forbidden
+	if !errors.As(err, &f) {
+		t.Fatalf("expected *Forbidden, got %T: %v", err, err)
+	}
+}
+
+func TestArtistService_Login_RateLimitExceeded(t *testing.T) {
+	// Build a token repo that reports attempts >= limit.
+	tr := &mockTokenRepo{}
+	tr2 := &overLimitTokenRepo{mockTokenRepo: tr}
+	log := logger.New(logger.LevelError, nil)
+	svc := service.NewArtistService(happyRepo(), tr2, log, 1, 1, service.ArtistServiceConfig{
+		AppCode:            "TEST_APP",
+		RoleCode:           "TEST_ROLE",
+		AccessTokenTTL:     15 * time.Minute,
+		RefreshTokenTTL:    168 * time.Hour,
+		LoginAttemptWindow: 15 * time.Minute,
+		LoginAttemptLimit:  10,
+	})
+	_, err := svc.Login(context.Background(), "1.2.3.4", service.LoginInput{
+		Email: "sari@example.com", Password: "secret123",
+	})
+	var u *domainerror.Unprocessable
+	if !errors.As(err, &u) {
+		t.Fatalf("expected *Unprocessable, got %T: %v", err, err)
+	}
+}
+
+// overLimitTokenRepo wraps mockTokenRepo and returns 10 attempts.
+type overLimitTokenRepo struct{ *mockTokenRepo }
+
+func (o *overLimitTokenRepo) GetLoginAttempts(_ context.Context, _, _ string) (int64, error) {
+	return 10, nil
+}
+
+// ── Refresh tests ──────────────────────────────────────────────────────────────
+
+func TestArtistService_Refresh_HappyPath(t *testing.T) {
+	svc := newTestService(happyRepo())
+	out, err := svc.Refresh(context.Background(), "any-token")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if out.AccessToken == "" || out.RefreshToken == "" {
+		t.Error("expected non-empty tokens")
+	}
+}
+
+// ── Logout tests ───────────────────────────────────────────────────────────────
+
+func TestArtistService_Logout_HappyPath(t *testing.T) {
+	svc := newTestService(happyRepo())
+	if err := svc.Logout(context.Background(), "any-token"); err != nil {
+		t.Fatalf("expected no error, got %v", err)
 	}
 }

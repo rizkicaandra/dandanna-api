@@ -2,10 +2,13 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/rizkicandra/dandanna-api/internal/domain/entity"
+	domainerror "github.com/rizkicandra/dandanna-api/internal/domain/error"
 	"github.com/rizkicandra/dandanna-api/internal/domain/repository"
 )
 
@@ -86,5 +89,59 @@ func (r *ArtistRepository) Create(ctx context.Context, params repository.CreateA
 		CreatedAt:      createdAt,
 		UpdatedAt:      updatedAt,
 		CreatedBy:      params.CreatedBy,
+	}, nil
+}
+
+func (r *ArtistRepository) GetByEmail(ctx context.Context, email string) (*entity.Artist, error) {
+	var row struct {
+		ID             string     `db:"id"`
+		Name           string     `db:"name"`
+		Phone          string     `db:"phone"`
+		Email          string     `db:"email"`
+		Password       string     `db:"password"`
+		CreatedAt      time.Time  `db:"created_at"`
+		UpdatedAt      time.Time  `db:"updated_at"`
+		DeletedAt      *time.Time `db:"deleted_at"`
+		CreatedBy      string     `db:"created_by"`
+		BusinessName   string     `db:"business_name"`
+		PrimaryService string     `db:"primary_service"`
+		City           string     `db:"city"`
+		Instagram      string     `db:"instagram"`
+		RoleStatus     string     `db:"role_status"`
+	}
+
+	err := r.db.QueryRowxContext(ctx, `
+		SELECT um.id, um.name, um.phone, um.email, um.password,
+		       um.created_at, um.updated_at, um.deleted_at, um.created_by,
+		       ap.business_name, ap.primary_service, ap.city, ap.instagram,
+		       ur.status AS role_status
+		FROM "user".user_management um
+		JOIN "user".artist_profile ap ON ap.user_management_id = um.id
+		JOIN "user".user_role       ur ON ur.user_management_id = um.id
+		WHERE um.email = $1 AND um.deleted_at IS NULL`,
+		email,
+	).StructScan(&row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, &domainerror.NotFound{Resource: "artist", ID: email}
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &entity.Artist{
+		ID:             row.ID,
+		Name:           row.Name,
+		Email:          row.Email,
+		Phone:          row.Phone,
+		BusinessName:   row.BusinessName,
+		PrimaryService: row.PrimaryService,
+		City:           row.City,
+		Instagram:      row.Instagram,
+		CreatedAt:      row.CreatedAt,
+		UpdatedAt:      row.UpdatedAt,
+		DeletedAt:      row.DeletedAt,
+		CreatedBy:      row.CreatedBy,
+		HashedPassword: row.Password,
+		RoleStatus:     row.RoleStatus,
 	}, nil
 }

@@ -14,7 +14,11 @@ make lint           # Run golangci-lint (requires installation)
 make fmt            # Format all Go code with gofmt -s
 make vet            # Run go vet
 make tidy           # go mod tidy + verify
-make install-tools  # Install air and golangci-lint
+make install-tools  # Install air, golangci-lint, and golang-migrate
+
+make migrate-up                        # Run all pending migrations
+make migrate-down                      # Roll back the last migration
+make migrate-create name=add_bookings  # Create a new up/down migration pair
 ```
 
 Run a single test package:
@@ -78,6 +82,24 @@ func NewArtistService(...) *ArtistService { ... }
 - Self-explanatory variable names or assignments
 - Standard library calls that are clear from context
 - Each line of a simple CRUD operation
+
+## DRY (Don't Repeat Yourself)
+
+Extract repeated logic into a shared helper as soon as the same block appears in **3 or more places**. Prefer the simplest extraction that removes the duplication — a package-level function, a generic helper, or a shared constant.
+
+**Handler layer** — use `decodeJSON[T]` for every request decode, never repeat the decode-or-400 block inline:
+```go
+req, ok := decodeJSON[dto.MyRequest](w, r)
+if !ok {
+    return
+}
+```
+
+**DTO layer** — request structs carry only `json` tags. Validation tags (`validate:"..."`) belong on the service input struct, never on DTOs. This keeps the decode step free of validation concerns and consistent across all request types.
+
+**Service layer** — validation lives on the `*Input` struct via `validate` tags, run once by the validator before any domain logic.
+
+**Do not extract prematurely** — two identical blocks is not enough. Wait for the third occurrence, then extract.
 
 ## Key Conventions
 
