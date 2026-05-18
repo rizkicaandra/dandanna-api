@@ -49,9 +49,13 @@ type RedisConfig struct {
 
 // AppConfig holds application-specific configuration
 type AppConfig struct {
-	Environment    string
-	LogLevel       string
-	CORSOrigins    []string
+	Environment         string
+	LogLevel            string
+	CORSOrigins         []string
+	AccessTokenTTL      time.Duration
+	RefreshTokenTTL     time.Duration
+	LoginAttemptWindow  time.Duration
+	LoginAttemptLimit   int
 }
 
 // Load reads configuration from environment variables.
@@ -84,9 +88,13 @@ func Load() (*Config, error) {
 			DB:       getEnvInt("REDIS_DB", 0),
 		},
 		App: AppConfig{
-			Environment: getEnv("APP_ENV", "development"),
-			LogLevel:    getEnv("LOG_LEVEL", "info"),
-			CORSOrigins: getEnvStringSlice("CORS_ALLOWED_ORIGINS", []string{"*"}),
+			Environment:        getEnv("APP_ENV", "development"),
+			LogLevel:           getEnv("LOG_LEVEL", "info"),
+			CORSOrigins:        getEnvStringSlice("CORS_ALLOWED_ORIGINS", []string{"*"}),
+			AccessTokenTTL:     getEnvDuration("ACCESS_TOKEN_TTL", 15*time.Minute),
+			RefreshTokenTTL:    getEnvDuration("REFRESH_TOKEN_TTL", 168*time.Hour),
+			LoginAttemptWindow: getEnvDuration("LOGIN_ATTEMPT_WINDOW", 15*time.Minute),
+			LoginAttemptLimit:  getEnvInt("LOGIN_ATTEMPT_LIMIT", 10),
 		},
 	}
 

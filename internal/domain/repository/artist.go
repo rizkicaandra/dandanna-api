@@ -23,4 +23,5 @@ type CreateArtistParams struct {
 type ArtistRepository interface {
 	ExistsByEmail(ctx context.Context, email string) (bool, error)
 	Create(ctx context.Context, params CreateArtistParams) (*entity.Artist, error)
+	GetByEmail(ctx context.Context, email string) (*entity.Artist, error)
 }

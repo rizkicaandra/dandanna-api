@@ -1,7 +1,11 @@
-.PHONY: build run test clean docker-build docker-run help
+.PHONY: build run test clean docker-build docker-run help migrate-up migrate-down migrate-create
+
+-include .env
+export
 
 # Variables
 APP_NAME=dandanna-api
+MIGRATE=migrate -path migrations -database "postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DATABASE)?sslmode=$(POSTGRES_SSLMODE)"
 VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_TIME=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS=-ldflags "-X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME)"
@@ -98,4 +102,15 @@ install-tools: ## Install development tools
 	@echo "Installing development tools..."
 	@go install github.com/air-verse/air@latest
 	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	@go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
 	@echo "Tools installed successfully"
+
+migrate-up: ## Run all pending migrations
+	$(MIGRATE) up
+
+migrate-down: ## Roll back the last migration
+	$(MIGRATE) down 1
+
+migrate-create: ## Create a new migration pair: make migrate-create name=add_bookings
+	@test -n "$(name)" || (echo "Usage: make migrate-create name=<migration_name>"; exit 1)
+	migrate create -ext sql -dir migrations -seq $(name)

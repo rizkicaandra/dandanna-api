@@ -18,10 +18,34 @@ import (
 
 type mockArtistServicer struct {
 	register func(ctx context.Context, input service.RegisterInput) (*entity.Artist, error)
+	login    func(ctx context.Context, ip string, input service.LoginInput) (*service.LoginOutput, error)
+	refresh  func(ctx context.Context, refreshToken string) (*service.RefreshOutput, error)
+	logout   func(ctx context.Context, refreshToken string) error
 }
 
 func (m *mockArtistServicer) Register(ctx context.Context, input service.RegisterInput) (*entity.Artist, error) {
 	return m.register(ctx, input)
+}
+
+func (m *mockArtistServicer) Login(ctx context.Context, ip string, input service.LoginInput) (*service.LoginOutput, error) {
+	if m.login != nil {
+		return m.login(ctx, ip, input)
+	}
+	return nil, errors.New("Login not implemented in mock")
+}
+
+func (m *mockArtistServicer) Refresh(ctx context.Context, refreshToken string) (*service.RefreshOutput, error) {
+	if m.refresh != nil {
+		return m.refresh(ctx, refreshToken)
+	}
+	return nil, errors.New("Refresh not implemented in mock")
+}
+
+func (m *mockArtistServicer) Logout(ctx context.Context, refreshToken string) error {
+	if m.logout != nil {
+		return m.logout(ctx, refreshToken)
+	}
+	return errors.New("Logout not implemented in mock")
 }
 
 func newArtistHandler(svc service.ArtistServicer) *handler.Artist {

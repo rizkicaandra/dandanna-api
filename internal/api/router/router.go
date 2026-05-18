@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/rizkicandra/dandanna-api/internal/api/middleware"
+	"github.com/rizkicandra/dandanna-api/internal/api/response"
 	"github.com/rizkicandra/dandanna-api/internal/infrastructure/logger"
 )
 
@@ -16,6 +17,9 @@ type HealthHandler interface {
 // ArtistHandler is the interface the router depends on for artist routes.
 type ArtistHandler interface {
 	Register(http.ResponseWriter, *http.Request)
+	Login(http.ResponseWriter, *http.Request)
+	Refresh(http.ResponseWriter, *http.Request)
+	Logout(http.ResponseWriter, *http.Request)
 }
 
 // Router manages HTTP routing
@@ -40,9 +44,14 @@ func (r *Router) Setup(health HealthHandler, artist ArtistHandler) {
 	r.mux.HandleFunc("GET /api/readyz", health.Readyz)
 
 	r.mux.HandleFunc("POST /api/artists/register", artist.Register)
+	r.mux.HandleFunc("POST /api/artists/login", artist.Login)
+	r.mux.HandleFunc("POST /api/artists/auth/refresh", artist.Refresh)
+	r.mux.HandleFunc("POST /api/artists/logout", artist.Logout)
 
 	r.mux.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
-		http.NotFound(w, req)
+		response.Error(w, req, http.StatusNotFound,
+			response.NewError("", "NOT_FOUND", "the requested resource does not exist"),
+		)
 	})
 }
 

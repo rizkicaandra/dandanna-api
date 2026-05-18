@@ -17,4 +17,8 @@ type Artist struct {
 	CreatedBy      string
 	UpdatedBy      string
 	DeletedBy      string
+
+	// Populated only by login queries — never persisted back or exposed in responses.
+	HashedPassword string
+	RoleStatus     string
 }

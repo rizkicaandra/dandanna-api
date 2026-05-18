@@ -6,19 +6,32 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/rizkicandra/dandanna-api/internal/api/handler"
 	"github.com/rizkicandra/dandanna-api/internal/application/service"
+	"github.com/rizkicandra/dandanna-api/internal/infrastructure/config"
 	"github.com/rizkicandra/dandanna-api/internal/infrastructure/logger"
 	pginfra "github.com/rizkicandra/dandanna-api/internal/infrastructure/postgres"
+	redisinfra "github.com/rizkicandra/dandanna-api/internal/infrastructure/redis"
 )
 
 // NewArtistHandler resolves all dependencies for the artist feature and returns
 // a ready-to-use handler. Fails fast if seed data is missing.
-func NewArtistHandler(ctx context.Context, db *sqlx.DB, log logger.Logger) (*handler.Artist, error) {
-	appID, err := pginfra.ResolveApplicationID(ctx, db, "ARTIST_PORTAL")
+func NewArtistHandler(
+	ctx context.Context,
+	db *sqlx.DB,
+	rdb *redisinfra.Client,
+	cfg *config.Config,
+	log logger.Logger,
+) (*handler.Artist, error) {
+	const (
+		appCode  = "ARTIST_PORTAL"
+		roleCode = "ARTIST"
+	)
+
+	appID, err := pginfra.ResolveApplicationID(ctx, db, appCode)
 	if err != nil {
 		return nil, err
 	}
 
-	roleID, err := pginfra.ResolveRoleID(ctx, db, "ARTIST")
+	roleID, err := pginfra.ResolveRoleID(ctx, db, roleCode)
 	if err != nil {
 		return nil, err
 	}
@@ -29,6 +42,14 @@ func NewArtistHandler(ctx context.Context, db *sqlx.DB, log logger.Logger) (*han
 	)
 
 	repo := pginfra.NewArtistRepository(db)
-	svc := service.NewArtistService(repo, log, appID, roleID)
+	tokenRepo := redisinfra.NewTokenRepository(rdb)
+	svc := service.NewArtistService(repo, tokenRepo, log, appID, roleID, service.ArtistServiceConfig{
+		AppCode:            appCode,
+		RoleCode:           roleCode,
+		AccessTokenTTL:     cfg.App.AccessTokenTTL,
+		RefreshTokenTTL:    cfg.App.RefreshTokenTTL,
+		LoginAttemptWindow: cfg.App.LoginAttemptWindow,
+		LoginAttemptLimit:  cfg.App.LoginAttemptLimit,
+	})
 	return handler.NewArtist(log, svc), nil
 }

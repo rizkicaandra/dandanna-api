@@ -104,7 +104,7 @@ func main() {
 	// ── 6. Bootstrap ──────────────────────────────────────────────────────────
 	// Wires all features (handlers, services, repositories) and registers routes.
 	// Each feature lives in its own bootstrap file under internal/bootstrap/.
-	r, err := bootstrap.NewRouter(context.Background(), db, rdb, log, Version, cfg.App.CORSOrigins)
+	r, err := bootstrap.NewRouter(context.Background(), db, rdb, cfg, log, Version, cfg.App.CORSOrigins)
 	if err != nil {
 		log.Error("failed to bootstrap application", logger.Err(err))
 		os.Exit(1)
