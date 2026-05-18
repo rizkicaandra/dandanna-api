@@ -28,7 +28,7 @@ type Response struct {
 
 // ResponseMeta contains request-scoped metadata attached to every response.
 type ResponseMeta struct {
-	RequestID string `json:"requestId"`
+	RequestID string `json:"request_id"`
 	Timestamp string `json:"timestamp"`
 }
 
